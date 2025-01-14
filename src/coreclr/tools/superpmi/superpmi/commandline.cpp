@@ -110,12 +110,21 @@ void CommandLine::DumpHelp(const char* program)
     printf("     If 'workerCount' is not specified, the number of workers used is\n");
     printf("     the number of processors on the machine.\n");
     printf("\n");
+    printf(" -streaming filename\n");
+    printf("     Streaming mode. Read and execute work requests from indicated file (can be 'stdin').\n");
+    printf("     Each line is a method context number and additional force jit options for that method.\n");
+    printf("     Blank line or EOF terminates\n");
+    printf("\n");
     printf(" -failureLimit <limit>\n");
     printf("     For a positive 'limit' number, replay and asm diffs will exit if it sees more than 'limit' failures.\n");
     printf("     Otherwise, all methods will be compiled.\n");
     printf("\n");
     printf(" -skipCleanup\n");
     printf("     Skip deletion of temporary files created by child SuperPMI processes with -parallel.\n");
+    printf("\n");
+    printf(" -repeatCount <repetition count>\n");
+    printf("     Number of times compilation should repeat for each method context. Usually used when\n");
+    printf("     trying to measure JIT throughput for a specific set of methods. Default=1.\n");
     printf("\n");
     printf(" -target <target>\n");
     printf("     Used by the assembly differences calculator. This specifies the target\n");
@@ -166,7 +175,7 @@ void CommandLine::DumpHelp(const char* program)
     printf("     ; if there are any failures, record their MC numbers in the file fail.mcl\n");
 }
 
-static bool ParseJitOption(const char* optionString, WCHAR** key, WCHAR** value)
+bool CommandLine::ParseJitOption(const char* optionString, char** key, char** value)
 {
     char tempKey[1024];
 
@@ -184,12 +193,12 @@ static bool ParseJitOption(const char* optionString, WCHAR** key, WCHAR** value)
     const char* tempVal = &optionString[i + 1];
 
     const unsigned keyLen = i;
-    WCHAR*       keyBuf = new WCHAR[keyLen + 1];
-    MultiByteToWideChar(CP_UTF8, 0, tempKey, keyLen + 1, keyBuf, keyLen + 1);
+    char*          keyBuf = new char[keyLen + 1];
+    strcpy_s(keyBuf, keyLen + 1, tempKey);
 
     const unsigned valLen = (unsigned)strlen(tempVal);
-    WCHAR*       valBuf = new WCHAR[valLen + 1];
-    MultiByteToWideChar(CP_UTF8, 0, tempVal, valLen + 1, valBuf, valLen + 1);
+    char*          valBuf = new char[valLen + 1];
+    strcpy_s(valBuf, valLen + 1, tempVal);
 
     *key   = keyBuf;
     *value = valBuf;
@@ -464,6 +473,17 @@ bool CommandLine::Parse(int argc, char* argv[], /* OUT */ Options* o)
                 }
                 o->hash = argv[i];
             }
+            else if ((_strnicmp(&argv[i][1], "streaming", argLen) == 0))
+            {
+                if (++i >= argc)
+                {
+                    LogError("'-streaming' must be followed by a file name or 'stdin'.");
+                    DumpHelp(argv[0]);
+                    return false;
+                }
+
+                o->streamFile = argv[i];
+            }
             else if ((_strnicmp(&argv[i][1], "parallel", argLen) == 0))
             {
                 o->parallel = true;
@@ -525,6 +545,40 @@ bool CommandLine::Parse(int argc, char* argv[], /* OUT */ Options* o)
             else if ((_stricmp(&argv[i][1], "skipCleanup") == 0))
             {
                 o->skipCleanup = true;
+            }
+            else if ((_stricmp(&argv[i][1], "repeatCount") == 0))
+            {
+                if (++i >= argc)
+                {
+                    DumpHelp(argv[0]);
+                    return false;
+                }
+
+                bool isValidRepeatCount = true;
+                size_t nextlen          = strlen(argv[i]);
+                for (size_t j = 0; j < nextlen; j++)
+                {
+                    if (!isdigit(argv[i][j]))
+                    {
+                        isValidRepeatCount = false;
+                        break;
+                    }
+                }
+                if (isValidRepeatCount)
+                {
+                    o->repeatCount = atoi(argv[i]);
+                    if (o->repeatCount < 1)
+                    {
+                        isValidRepeatCount = false;
+                    }
+                }
+
+                if (!isValidRepeatCount)
+                {
+                    LogError("Invalid repeat count specified. Repeat count must be between 1 and INT_MAX.");
+                    DumpHelp(argv[0]);
+                    return false;
+                }
             }
             else if ((_strnicmp(&argv[i][1], "stride", argLen) == 0))
             {
@@ -635,6 +689,21 @@ bool CommandLine::Parse(int argc, char* argv[], /* OUT */ Options* o)
         {
             LogError("Illegal target architecture specified with -target (use 'x64', 'x86', 'arm64', or 'arm').");
             DumpHelp(argv[0]);
+            return false;
+        }
+    }
+
+    if (o->streamFile != nullptr)
+    {
+        if (o->parallel)
+        {
+            LogError("streaming mode and parallel mode are incompatible.");
+            return false;
+        }
+
+        if (o->nameOfJit2 != nullptr)
+        {
+            LogError("streaming mode and diff mode are incompatible.");
             return false;
         }
     }
@@ -843,8 +912,8 @@ bool CommandLine::AddJitOption(int&  currArgument,
         targetjitOptions = *pJitOptions;
     }
 
-    WCHAR* key;
-    WCHAR* value;
+    char* key;
+    char* value;
     if ((currArgument >= argc) || !ParseJitOption(argv[currArgument], &key, &value))
     {
         DumpHelp(argv[0]);
@@ -852,9 +921,9 @@ bool CommandLine::AddJitOption(int&  currArgument,
     }
 
     DWORD keyIndex =
-        (DWORD)targetjitOptions->AddBuffer((unsigned char*)key, sizeof(WCHAR) * ((unsigned int)u16_strlen(key) + 1));
+        (DWORD)targetjitOptions->AddBuffer((unsigned char*)key, sizeof(char) * ((unsigned int)strlen(key) + 1));
     DWORD valueIndex =
-        (DWORD)targetjitOptions->AddBuffer((unsigned char*)value, sizeof(WCHAR) * ((unsigned int)u16_strlen(value) + 1));
+        (DWORD)targetjitOptions->AddBuffer((unsigned char*)value, sizeof(char) * ((unsigned int)strlen(value) + 1));
     targetjitOptions->Add(keyIndex, valueIndex);
 
     delete[] key;

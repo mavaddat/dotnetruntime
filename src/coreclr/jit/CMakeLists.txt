@@ -73,12 +73,14 @@ function(create_standalone_jit)
   if ((TARGETDETAILS_ARCH STREQUAL "x64") OR (TARGETDETAILS_ARCH STREQUAL "arm64") OR ((TARGETDETAILS_ARCH STREQUAL "x86") AND NOT (TARGETDETAILS_OS STREQUAL "unix")))
     target_compile_definitions(${TARGETDETAILS_TARGET} PRIVATE FEATURE_SIMD)
     target_compile_definitions(${TARGETDETAILS_TARGET} PRIVATE FEATURE_HW_INTRINSICS)
+    target_compile_definitions(${TARGETDETAILS_TARGET} PRIVATE FEATURE_MASKED_HW_INTRINSICS)
   endif ()
 endfunction()
 
 if (CLR_CMAKE_TARGET_ARCH_AMD64 OR CLR_CMAKE_TARGET_ARCH_ARM64 OR (CLR_CMAKE_TARGET_ARCH_I386 AND NOT CLR_CMAKE_HOST_UNIX))
   add_compile_definitions($<$<NOT:$<BOOL:$<TARGET_PROPERTY:IGNORE_DEFAULT_TARGET_ARCH>>>:FEATURE_SIMD>)
   add_compile_definitions($<$<NOT:$<BOOL:$<TARGET_PROPERTY:IGNORE_DEFAULT_TARGET_ARCH>>>:FEATURE_HW_INTRINSICS>)
+  add_compile_definitions($<$<NOT:$<BOOL:$<TARGET_PROPERTY:IGNORE_DEFAULT_TARGET_ARCH>>>:FEATURE_MASKED_HW_INTRINSICS>)
 endif ()
 
 # JIT_BUILD disables certain PAL_TRY debugging features
@@ -89,12 +91,12 @@ if(CLR_CMAKE_TARGET_WIN32)
 endif(CLR_CMAKE_TARGET_WIN32)
 
 set( JIT_SOURCES
+  abi.cpp
   alloc.cpp
   assertionprop.cpp
   bitset.cpp
   block.cpp
   buildstring.cpp
-  layout.cpp
   codegencommon.cpp
   codegenlinear.cpp
   compiler.cpp
@@ -123,20 +125,23 @@ set( JIT_SOURCES
   gentree.cpp
   gschecks.cpp
   hashbv.cpp
-  hwintrinsic.cpp
-  hostallocator.cpp
-  ifconversion.cpp
   helperexpansion.cpp
-  indirectcalltransformer.cpp
-  importercalls.cpp
+  hostallocator.cpp
+  hwintrinsic.cpp
+  ifconversion.cpp
   importer.cpp
+  importercalls.cpp
   importervectorization.cpp
+  indirectcalltransformer.cpp
+  inductionvariableopts.cpp
   inline.cpp
   inlinepolicy.cpp
   instr.cpp
   jitconfig.cpp
   jiteh.cpp
   jithashtable.cpp
+  jitmetadata.cpp
+  layout.cpp
   lclmorph.cpp
   lclvars.cpp
   likelyclass.cpp
@@ -151,7 +156,7 @@ set( JIT_SOURCES
   objectalloc.cpp
   optcse.cpp
   optimizebools.cpp
-  switchrecognition.cpp
+  optimizemaskconversions.cpp
   optimizer.cpp
   patchpoint.cpp
   phase.cpp
@@ -163,7 +168,9 @@ set( JIT_SOURCES
   redundantbranchopts.cpp
   regalloc.cpp
   registerargconvention.cpp
+  regMaskTPOps.cpp
   regset.cpp
+  scev.cpp
   scopeinfo.cpp
   sideeffects.cpp
   sm.cpp
@@ -172,6 +179,8 @@ set( JIT_SOURCES
   ssabuilder.cpp
   ssarenamestate.cpp
   stacklevelsetter.cpp
+  structsegments.cpp
+  switchrecognition.cpp
   treelifeupdater.cpp
   unwind.cpp
   utils.cpp
@@ -192,7 +201,6 @@ set( JIT_AMD64_SOURCES
   lowerxarch.cpp
   lsraxarch.cpp
   simd.cpp
-  simdashwintrinsic.cpp
   simdcodegenxarch.cpp
   targetamd64.cpp
   unwindamd64.cpp
@@ -219,7 +227,6 @@ set( JIT_I386_SOURCES
   lowerxarch.cpp
   lsraxarch.cpp
   simd.cpp
-  simdashwintrinsic.cpp
   simdcodegenxarch.cpp
   targetx86.cpp
   unwindx86.cpp
@@ -230,12 +237,13 @@ set( JIT_I386_SOURCES
 set( JIT_ARM64_SOURCES
   codegenarmarch.cpp
   codegenarm64.cpp
+  codegenarm64test.cpp
   emitarm64.cpp
+  emitarm64sve.cpp
   lowerarmarch.cpp
   lsraarmarch.cpp
   lsraarm64.cpp
   simd.cpp
-  simdashwintrinsic.cpp
   targetarm64.cpp
   unwindarmarch.cpp
   unwindarm64.cpp
@@ -280,6 +288,7 @@ set( JIT_HEADERS
   ../inc/corjitflags.h
   ../inc/corjithost.h
   _typeinfo.h
+  abi.h
   alloc.h
   arraystack.h
   bitset.h
@@ -290,7 +299,6 @@ set( JIT_HEADERS
   bitsetops.h
   bitvec.h
   block.h
-  blockset.h
   codegen.h
   codegeninterface.h
   compiler.h
@@ -333,6 +341,8 @@ set( JIT_HEADERS
   jitexpandarray.h
   jitgcinfo.h
   jithashtable.h
+  jitmetadata.h
+  jitmetadatalist.h
   jitpch.h
   jitstd.h
   lir.h
@@ -346,7 +356,9 @@ set( JIT_HEADERS
   namedintrinsiclist.h
   objectalloc.h
   opcode.h
+  optcse.h
   phase.h
+  priorityqueue.h
   promotion.h
   rangecheck.h
   rationalize.h
@@ -354,9 +366,9 @@ set( JIT_HEADERS
   registerargconvention.h
   register.h
   regset.h
+  scev.h
   sideeffects.h
   simd.h
-  simdashwintrinsic.h
   sm.h
   smallhash.h
   smcommon.h
@@ -365,12 +377,12 @@ set( JIT_HEADERS
   ssaconfig.h
   ssarenamestate.h
   stacklevelsetter.h
+  structsegments.h
   target.h
   targetx86.h
   targetamd64.h
   targetarm.h
   targetarm64.h
-  tinyarray.h
   treelifeupdater.h
   typelist.h
   unwind.h
@@ -390,7 +402,6 @@ set( JIT_AMD64_HEADERS
   hwintrinsiclistxarch.h
   hwintrinsic.h
   instrsxarch.h
-  simdashwintrinsiclistxarch.h
 )
 
 set( JIT_I386_HEADERS ${JIT_AMD64_HEADERS} )
@@ -398,10 +409,12 @@ set( JIT_I386_HEADERS ${JIT_AMD64_HEADERS} )
 set( JIT_ARM64_HEADERS
     emitarm64.h
     emitfmtsarm64.h
+    emitfmtsarm64sve.h
     hwintrinsiclistarm64.h
+    hwintrinsiclistarm64sve.h
     instrsarm64.h
+    instrsarm64sve.h
     registerarm64.h
-    simdashwintrinsiclistarm64.h
 )
 
 set( JIT_ARM_HEADERS
@@ -508,7 +521,7 @@ else()
 
   if(CLR_CMAKE_TARGET_LINUX OR CLR_CMAKE_TARGET_FREEBSD OR CLR_CMAKE_TARGET_NETBSD OR CLR_CMAKE_TARGET_SUNOS)
     # This is required to force using our own PAL, not one that we are loaded with.
-    add_link_options($<$<STREQUAL:$<TARGET_PROPERTY:TYPE>,SHARED_LIBRARY>:LINKER:-Bsymbolic>)
+    set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Xlinker -Bsymbolic")
   endif()
 
   set_exports_linker_option(${JIT_EXPORTS_FILE})

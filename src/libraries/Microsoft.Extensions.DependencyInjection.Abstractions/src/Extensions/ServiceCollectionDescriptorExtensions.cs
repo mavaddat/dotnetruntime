@@ -67,7 +67,7 @@ namespace Microsoft.Extensions.DependencyInjection.Extensions
             for (int i = 0; i < count; i++)
             {
                 if (collection[i].ServiceType == descriptor.ServiceType
-                    && collection[i].ServiceKey == descriptor.ServiceKey)
+                    && object.Equals(collection[i].ServiceKey, descriptor.ServiceKey))
                 {
                     // Already added
                     return;
@@ -435,7 +435,7 @@ namespace Microsoft.Extensions.DependencyInjection.Extensions
         /// <summary>
         /// Adds a <see cref="ServiceDescriptor"/> if an existing descriptor with the same
         /// <see cref="ServiceDescriptor.ServiceType"/> and an implementation that does not already exist
-        /// in <paramref name="services."/>.
+        /// in <paramref name="services"/>.
         /// </summary>
         /// <param name="services">The <see cref="IServiceCollection"/>.</param>
         /// <param name="descriptor">The <see cref="ServiceDescriptor"/>.</param>
@@ -474,7 +474,7 @@ namespace Microsoft.Extensions.DependencyInjection.Extensions
                 ServiceDescriptor service = services[i];
                 if (service.ServiceType == descriptor.ServiceType &&
                     service.GetImplementationType() == implementationType &&
-                    service.ServiceKey == descriptor.ServiceKey)
+                    object.Equals(service.ServiceKey, descriptor.ServiceKey))
                 {
                     // Already added
                     return;
@@ -487,7 +487,7 @@ namespace Microsoft.Extensions.DependencyInjection.Extensions
         /// <summary>
         /// Adds the specified <see cref="ServiceDescriptor"/>s if an existing descriptor with the same
         /// <see cref="ServiceDescriptor.ServiceType"/> and an implementation that does not already exist
-        /// in <paramref name="services."/>.
+        /// in <paramref name="services"/>.
         /// </summary>
         /// <param name="services">The <see cref="IServiceCollection"/>.</param>
         /// <param name="descriptors">The <see cref="ServiceDescriptor"/>s.</param>
@@ -532,7 +532,7 @@ namespace Microsoft.Extensions.DependencyInjection.Extensions
             int count = collection.Count;
             for (int i = 0; i < count; i++)
             {
-                if (collection[i].ServiceType == descriptor.ServiceType && collection[i].ServiceKey == descriptor.ServiceKey)
+                if (collection[i].ServiceType == descriptor.ServiceType && object.Equals(collection[i].ServiceKey, descriptor.ServiceKey))
                 {
                     collection.RemoveAt(i);
                     break;

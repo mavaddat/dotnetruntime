@@ -7,6 +7,7 @@ using System.Collections.Concurrent;
 using System.Runtime.InteropServices;
 using System;
 using System.Security.Cryptography;
+using Mono.Options;
 
 namespace HttpServer
 {
@@ -21,17 +22,54 @@ namespace HttpServer
 
     public sealed class Program
     {
-        private bool Verbose = false;
+        private static bool Verbose = false;
+        private static string URLSuffix = "";
         private ConcurrentDictionary<string, Session> Sessions = new ConcurrentDictionary<string, Session>();
         private Dictionary<string, FileContent> cache = new(StringComparer.OrdinalIgnoreCase);
 
-        public static int Main()
+        static List<string> ProcessArguments(string[] args)
+        {
+            var help = false;
+            var options = new OptionSet {
+                $"Usage: HttpServer OPTIONS*",
+                "",
+                "Simple http server for browser-bench sample",
+                "",
+                "Copyright 2022, 2023 Microsoft Corporation",
+                "",
+                "Options:",
+                { "h|help|?",
+                    "Show this message and exit",
+                    v => help = v != null },
+                { "s=",
+                    "URL {suffix}",
+                    v => URLSuffix =  v },
+                { "v|verbose",
+                    "Output more information during the run of the server.",
+                    v => Verbose = true },
+            };
+
+            var remaining = options.Parse(args);
+
+            if (help)
+            {
+                options.WriteOptionDescriptions(Console.Out);
+
+                Environment.Exit(0);
+            }
+
+            return remaining;
+        }
+
+        public static int Main(string[] args)
         {
             if (!HttpListener.IsSupported)
             {
                 Console.WriteLine("error: HttpListener is not supported.");
                 return -1;
             }
+
+            ProcessArguments(args);
 
             // retry upto 9 times to find free port
             for (int i = 0; i < 10; i++)
@@ -60,7 +98,7 @@ namespace HttpServer
             }
 
             Console.WriteLine($"Listening on {url}");
-            OpenUrl(url);
+            OpenUrl(url + URLSuffix);
 
             while (true)
                 HandleRequest(listener);
@@ -153,11 +191,32 @@ namespace HttpServer
             if (contentType != null && contentType.StartsWith("text/plain") && path.StartsWith("/"))
             {
                 path = path.Substring(1);
+                var split = path.Split('=');
+                string cmd;
+                if (split.Length > 1)
+                {
+                    cmd = split[0];
+                    path = split[1];
+                } else
+                    cmd = "rewrite";
+
                 if (Verbose)
-                    Console.WriteLine($"  writting POST stream to '{path}' file");
+                    Console.WriteLine($"  POST cmd: {cmd} path: '{path}'");
 
                 var content = await new StreamReader(context.Request.InputStream).ReadToEndAsync().ConfigureAwait(false);
-                await File.WriteAllTextAsync(path, content).ConfigureAwait(false);
+
+                switch (cmd) {
+                    case "rewrite":
+                        await File.WriteAllTextAsync(path, content).ConfigureAwait(false);
+                        break;
+                    case "log":
+                        await File.AppendAllTextAsync(path, content + "\n").ConfigureAwait(false); 
+                        Console.WriteLine($"  log: {content}");
+                        break;
+                    default:
+                        Console.WriteLine($"  unknown command: {cmd}");
+                        break;
+                }
             }
             else
                 return;

@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.IO.Compression;
 using System.Runtime.InteropServices;
 using System.Text;
 using Xunit;
@@ -12,7 +13,7 @@ using Xunit.Abstractions;
 
 internal static class Utils
 {
-    public static void DirectoryCopy(string sourceDirName, string destDirName, Func<string, bool>? predicate=null, bool copySubDirs=true, bool silent=false, ITestOutputHelper? testOutput = null)
+    public static void DirectoryCopy(string sourceDirName, string destDirName, Func<string, bool>? predicate=null, bool copySubDirs=true, bool silent=false, ITestOutputHelper? testOutput = null, bool overwrite = false)
     {
         // Get the subdirectories for the specified directory.
         DirectoryInfo dir = new DirectoryInfo(sourceDirName);
@@ -44,7 +45,7 @@ internal static class Utils
             string tempPath = Path.Combine(destDirName, file.Name);
              if (!silent)
                  testOutput?.WriteLine($"Copying {fullPath} to {tempPath}");
-            file.CopyTo(tempPath, false);
+            file.CopyTo(tempPath, overwrite);
         }
 
         // If copying subdirectories, copy them and their contents to new location.
@@ -58,4 +59,16 @@ internal static class Utils
         }
     }
 
+    public static string GZipCompress(string fileSelected)
+    {
+        FileInfo fileToCompress = new FileInfo(fileSelected);
+        string compressedFileName = fileToCompress.FullName + ".gz";
+
+        using FileStream originalFileStream = fileToCompress.OpenRead();
+        using FileStream compressedFileStream = File.Create(compressedFileName);
+        using GZipStream compressionStream = new(compressedFileStream, CompressionMode.Compress);
+        originalFileStream.CopyTo(compressionStream);
+
+        return compressedFileName;
+    }
 }

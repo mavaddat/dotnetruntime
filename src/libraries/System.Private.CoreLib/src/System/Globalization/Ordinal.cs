@@ -294,7 +294,7 @@ namespace System.Globalization
             return CompareStringIgnoreCase(ref Unsafe.AddByteOffset(ref charA, byteOffset), length, ref Unsafe.AddByteOffset(ref charB, byteOffset), length) == 0;
         }
 
-        internal static unsafe int IndexOf(string source, string value, int startIndex, int count, bool ignoreCase)
+        internal static int IndexOf(string source, string value, int startIndex, int count, bool ignoreCase)
         {
             if (source == null)
             {
@@ -397,7 +397,7 @@ namespace System.Globalization
                 // Do a quick search for the first element of "value".
                 int relativeIndex = isLetter ?
                     PackedSpanHelpers.PackedIndexOfIsSupported
-                        ? PackedSpanHelpers.IndexOfAny(ref Unsafe.Add(ref searchSpace, offset), valueCharU, valueCharL, searchSpaceMinusValueTailLength)
+                        ? PackedSpanHelpers.IndexOfAnyIgnoreCase(ref Unsafe.Add(ref searchSpace, offset), valueCharL, searchSpaceMinusValueTailLength)
                         : SpanHelpers.IndexOfAnyChar(ref Unsafe.Add(ref searchSpace, offset), valueCharU, valueCharL, searchSpaceMinusValueTailLength) :
                     SpanHelpers.IndexOfChar(ref Unsafe.Add(ref searchSpace, offset), valueChar, searchSpaceMinusValueTailLength);
                 if (relativeIndex < 0)
@@ -593,7 +593,7 @@ namespace System.Globalization
             return result;
         }
 
-        internal static unsafe int LastIndexOf(string source, string value, int startIndex, int count, bool ignoreCase)
+        internal static int LastIndexOf(string source, string value, int startIndex, int count, bool ignoreCase)
         {
             if (source == null)
             {

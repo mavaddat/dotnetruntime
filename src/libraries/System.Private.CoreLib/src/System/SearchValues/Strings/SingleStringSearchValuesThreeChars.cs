@@ -15,7 +15,8 @@ namespace System.Buffers
     // This implementation uses 3 precomputed anchor points when searching.
     // This implementation may also be used for length=2 values, in which case two anchors point at the same position.
     // Has an O(i * m) worst-case, with the expected time closer to O(n) for most inputs.
-    internal sealed class SingleStringSearchValuesThreeChars<TCaseSensitivity> : StringSearchValuesBase
+    internal sealed class SingleStringSearchValuesThreeChars<TValueLength, TCaseSensitivity> : StringSearchValuesBase
+        where TValueLength : struct, IValueLength
         where TCaseSensitivity : struct, ICaseSensitivity
     {
         private const ushort CaseConversionMask = unchecked((ushort)~0x20);
@@ -30,10 +31,23 @@ namespace System.Buffers
 
         private static bool IgnoreCase => typeof(TCaseSensitivity) != typeof(CaseSensitive);
 
+        // If the value is short (!TValueLength.AtLeast4Chars => 2 or 3 characters), the anchors already represent the whole value.
+        // With case-sensitive comparisons, we've therefore already confirmed the match.
+        // With case-insensitive comparisons, we've applied the CaseConversionMask to the input, so while the anchors likely matched, we can't be sure.
+        // An exception to that is if we know the value is composed of only ASCII letters, in which case masking the input can't produce false positives.
+        private static bool CanSkipAnchorMatchVerification
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get =>
+                !TValueLength.AtLeast4Chars &&
+                (typeof(TCaseSensitivity) == typeof(CaseSensitive) || typeof(TCaseSensitivity) == typeof(CaseInsensitiveAsciiLetters));
+        }
+
         public SingleStringSearchValuesThreeChars(HashSet<string>? uniqueValues, string value) : base(uniqueValues)
         {
             // We could have more than one entry in 'uniqueValues' if this value is an exact prefix of all the others.
             Debug.Assert(value.Length > 1);
+            Debug.Assert((value.Length >= 8) == TValueLength.AtLeast8CharsOrUnknown);
 
             CharacterFrequencyHelper.GetSingleStringMultiCharacterOffsets(value, IgnoreCase, out int ch2Offset, out int ch3Offset);
 
@@ -228,7 +242,7 @@ namespace System.Buffers
 
                 // CaseInsensitiveUnicode doesn't support single-character transformations, so we skip checking the first character first.
                 if ((typeof(TCaseSensitivity) == typeof(CaseInsensitiveUnicode) || TCaseSensitivity.TransformInput(cur) == valueHead) &&
-                    TCaseSensitivity.Equals(ref cur, value))
+                    TCaseSensitivity.Equals<TValueLength>(ref cur, value))
                 {
                     return (int)i;
                 }
@@ -325,7 +339,7 @@ namespace System.Buffers
 
                 ValidateReadPosition(ref searchSpaceStart, searchSpaceLength, ref matchRef, _value.Length);
 
-                if (TCaseSensitivity.Equals(ref matchRef, _value))
+                if (CanSkipAnchorMatchVerification || TCaseSensitivity.Equals<TValueLength>(ref matchRef, _value))
                 {
                     offsetFromStart = (int)((nuint)Unsafe.ByteOffset(ref searchSpaceStart, ref matchRef) / 2);
                     return true;
@@ -353,7 +367,7 @@ namespace System.Buffers
 
                 ValidateReadPosition(ref searchSpaceStart, searchSpaceLength, ref matchRef, _value.Length);
 
-                if (TCaseSensitivity.Equals(ref matchRef, _value))
+                if (CanSkipAnchorMatchVerification || TCaseSensitivity.Equals<TValueLength>(ref matchRef, _value))
                 {
                     offsetFromStart = (int)((nuint)Unsafe.ByteOffset(ref searchSpaceStart, ref matchRef) / 2);
                     return true;
@@ -374,6 +388,6 @@ namespace System.Buffers
 
         internal override string[] GetValues() => HasUniqueValues
             ? base.GetValues()
-            : new string[] { _value };
+            : [_value];
     }
 }

@@ -99,7 +99,7 @@ internal static partial class Interop
         }
 
         [LibraryImport(Libraries.OpenLdap, EntryPoint = "ldap_initialize", SetLastError = true)]
-        public static partial int ldap_initialize(out IntPtr ld,  [MarshalAs(UnmanagedType.LPUTF8Str)] string uri);
+        public static partial int ldap_initialize(out IntPtr ld, [MarshalAs(UnmanagedType.LPUTF8Str)] string uri);
 
         [LibraryImport(Libraries.OpenLdap, EntryPoint = "ldap_unbind_ext_s")]
         public static partial int ldap_unbind_ext_s(IntPtr ld, ref IntPtr serverctrls, ref IntPtr clientctrls);
@@ -220,9 +220,6 @@ internal static partial class Interop
 
         [LibraryImport(Libraries.OpenLdap, EntryPoint = "ldap_first_reference")]
         public static partial IntPtr ldap_first_reference(ConnectionHandle ldapHandle, IntPtr result);
-
-        [LibraryImport(Libraries.OpenLdap, EntryPoint = "ldap_create_sort_control")]
-        public static partial int ldap_create_sort_control(ConnectionHandle handle, IntPtr keys, byte critical, ref IntPtr control);
 
         [LibraryImport(Libraries.OpenLdap, EntryPoint = "ldap_control_free")]
         public static partial int ldap_control_free(IntPtr control);

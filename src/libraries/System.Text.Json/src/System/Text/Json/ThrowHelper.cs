@@ -13,9 +13,33 @@ namespace System.Text.Json
         public const string ExceptionSourceValueToRethrowAsJsonException = "System.Text.Json.Rethrowable";
 
         [DoesNotReturn]
+        public static void ThrowArgumentOutOfRangeException_NewLine(string parameterName)
+        {
+            throw GetArgumentOutOfRangeException(parameterName, SR.InvalidNewLine);
+        }
+
+        [DoesNotReturn]
+        public static void ThrowArgumentOutOfRangeException_IndentCharacter(string parameterName)
+        {
+            throw GetArgumentOutOfRangeException(parameterName, SR.InvalidIndentCharacter);
+        }
+
+        [DoesNotReturn]
+        public static void ThrowArgumentOutOfRangeException_IndentSize(string parameterName, int minimumSize, int maximumSize)
+        {
+            throw GetArgumentOutOfRangeException(parameterName, SR.Format(SR.InvalidIndentSize, minimumSize, maximumSize));
+        }
+
+        [DoesNotReturn]
         public static void ThrowArgumentOutOfRangeException_MaxDepthMustBePositive(string parameterName)
         {
             throw GetArgumentOutOfRangeException(parameterName, SR.MaxDepthMustBePositive);
+        }
+
+        [DoesNotReturn]
+        public static void ThrowArgumentOutOfRangeException_JsonNumberExponentTooLarge(string parameterName)
+        {
+            throw GetArgumentOutOfRangeException(parameterName, SR.JsonNumberExponentTooLarge);
         }
 
         private static ArgumentOutOfRangeException GetArgumentOutOfRangeException(string parameterName, string message)
@@ -39,6 +63,18 @@ namespace System.Text.Json
         public static void ThrowArgumentOutOfRangeException_JsonConverterFactory_TypeNotSupported(Type typeToConvert)
         {
             throw new ArgumentOutOfRangeException(nameof(typeToConvert), SR.Format(SR.SerializerConverterFactoryInvalidArgument, typeToConvert.FullName));
+        }
+
+        [DoesNotReturn]
+        public static void ThrowArgumentOutOfRangeException_NeedNonNegNum(string paramName)
+        {
+            throw new ArgumentOutOfRangeException(paramName, SR.ArgumentOutOfRange_Generic_MustBeNonNegative);
+        }
+
+        [DoesNotReturn]
+        public static void ThrowArgumentException_InvalidOffLen()
+        {
+            throw new ArgumentException(SR.Argument_InvalidOffLen);
         }
 
         [DoesNotReturn]
@@ -273,6 +309,12 @@ namespace System.Text.Json
         public static void ThrowInvalidOperationException_CannotSkipOnPartial()
         {
             throw GetInvalidOperationException(SR.CannotSkip);
+        }
+
+        [DoesNotReturn]
+        public static void ThrowInvalidOperationException_CannotMixEncodings(Utf8JsonWriter.SegmentEncoding previousEncoding, Utf8JsonWriter.SegmentEncoding currentEncoding)
+        {
+            throw GetInvalidOperationException(SR.Format(SR.CannotMixEncodings, previousEncoding, currentEncoding));
         }
 
         private static InvalidOperationException GetInvalidOperationException(string message, JsonTokenType tokenType)
@@ -580,6 +622,9 @@ namespace System.Text.Json
                 case ExceptionResource.CannotWriteValueAfterPrimitiveOrClose:
                     message = SR.Format(SR.CannotWriteValueAfterPrimitiveOrClose, tokenType);
                     break;
+                case ExceptionResource.CannotWriteWithinString:
+                    message = SR.CannotWriteWithinString;
+                    break;
                 default:
                     Debug.Fail($"The ExceptionResource enum value: {resource} is not part of the switch. Add the appropriate case and exception message.");
                     break;
@@ -695,6 +740,12 @@ namespace System.Text.Json
         {
             throw new ObjectDisposedException(nameof(JsonDocument));
         }
+
+        [DoesNotReturn]
+        public static void ThrowInsufficientExecutionStackException_JsonElementDeepEqualsInsufficientExecutionStack()
+        {
+            throw new InsufficientExecutionStackException(SR.JsonElementDeepEqualsInsufficientExecutionStack);
+        }
     }
 
     internal enum ExceptionResource
@@ -740,6 +791,7 @@ namespace System.Text.Json
         ExpectedOneCompleteToken,
         NotEnoughData,
         InvalidLeadingZeroInNumber,
+        CannotWriteWithinString,
     }
 
     internal enum NumericType

@@ -325,7 +325,7 @@ namespace ComWrappersTests.Common
             const int S_OK = 0;
             const int E_NOINTERFACE = unchecked((int)0x80004002);
 
-            int hr = Marshal.QueryInterface(this.classNative.Inner, in iid, out ppv);
+            int hr = Marshal.QueryInterface(this.classNative.Inner, iid, out ppv);
             if (hr == S_OK)
             {
                 return CustomQueryInterfaceResult.Handled;
@@ -339,7 +339,7 @@ namespace ComWrappersTests.Common
 
     class ComWrappersHelper
     {
-        private static Guid IID_IReferenceTracker = new Guid("11d3b13a-180e-4789-a8be-7712882893e6");
+        public static readonly Guid IID_IReferenceTracker = new Guid("11d3b13a-180e-4789-a8be-7712882893e6");
 
         [Flags]
         public enum ReleaseFlags
@@ -402,7 +402,7 @@ namespace ComWrappersTests.Common
                 // it should answer immediately without going through the outer. Either way
                 // the reference count will go to the new instance.
                 IntPtr queryForTracker = isAggregation ? classNative.Inner : classNative.Instance;
-                int hr = Marshal.QueryInterface(queryForTracker, in IID_IReferenceTracker, out classNative.ReferenceTracker);
+                int hr = Marshal.QueryInterface(queryForTracker, IID_IReferenceTracker, out classNative.ReferenceTracker);
                 if (hr != 0)
                 {
                     classNative.ReferenceTracker = default;

@@ -5,7 +5,9 @@ using Microsoft.Extensions.Options;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
+using System.Globalization;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Xunit;
 
@@ -361,7 +363,7 @@ namespace Microsoft.Gen.OptionsValidation.Unit.Test
             Assert.Equal(new [] {
 #if NET8_0_OR_GREATER
                 "P0: The field OptionsUsingGeneratedAttributes.P0 must be a string or collection type with a minimum length of '1' and maximum length of '3'.",
-                "P11: The field OptionsUsingGeneratedAttributes.P11 must be between 1/30/2023 12:00:00 AM and 12/30/2023 12:00:00 AM.",
+                string.Format(CultureInfo.CurrentCulture, "P11: The field OptionsUsingGeneratedAttributes.P11 must be between {0} and {1}.", new DateTime(2023, 1, 30), new DateTime(2023, 12, 30)),
                 "P12: The field OptionsUsingGeneratedAttributes.P12 must be between 5 exclusive and 10.",
                 "P13: The field OptionsUsingGeneratedAttributes.P13 must be between 5 and 10 exclusive.",
                 "P14: The field OptionsUsingGeneratedAttributes.P14 must be a string or collection type with a minimum length of '2' and maximum length of '10'.",
@@ -397,6 +399,23 @@ namespace Microsoft.Gen.OptionsValidation.Unit.Test
             }, generatorResult.Failures);
 
             Assert.Equal(results.Count(), generatorResult.Failures.Count());
+        }
+
+        [ConditionalFact(typeof(PlatformDetection), nameof(PlatformDetection.IsNotBrowser))]
+        public void TestGeneratedRangeAttributeThreadSafety()
+        {
+            OptionsWithTimeSpanRangeAttribute options = new OptionsWithTimeSpanRangeAttribute() { Name = "T1", Period = TimeSpan.FromHours(1) };
+            TimeSpanRangeAttributeValidator validator = new TimeSpanRangeAttributeValidator();
+
+            var barrier = new Barrier(8);
+            Task.WaitAll(
+                (from i in Enumerable.Range(0, barrier.ParticipantCount)
+                select Task.Factory.StartNew(() =>
+                {
+                    barrier.SignalAndWait();
+                    ValidateOptionsResult result = validator.Validate("T1", options);
+                    Assert.True(result.Succeeded);
+                }, TaskCreationOptions.LongRunning)).ToArray());
         }
     }
 
@@ -604,4 +623,18 @@ namespace Microsoft.Gen.OptionsValidation.Unit.Test
     }
 #endif // NET8_0_OR_GREATER
 
+
+    public class OptionsWithTimeSpanRangeAttribute
+    {
+        [Required]
+        public string Name { get; set; }
+
+        [RangeAttribute(typeof(TimeSpan), "01:00:00", "23:59:59")]
+        public TimeSpan Period { get; set; }
+    }
+
+    [OptionsValidator]
+    public partial class TimeSpanRangeAttributeValidator : IValidateOptions<OptionsWithTimeSpanRangeAttribute>
+    {
+    }
 }

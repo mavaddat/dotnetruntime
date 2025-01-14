@@ -65,6 +65,11 @@ Revision History:
 #include <mach/mach_host.h>
 #endif // defined(TARGET_OSX)
 
+#ifdef __HAIKU__
+#include <OS.h>
+#endif // __HAIKU__
+
+#ifdef __FreeBSD__
 // On some platforms sys/user.h ends up defining _DEBUG; if so
 // remove the definition before including the header and put
 // back our definition afterwards
@@ -78,6 +83,7 @@ Revision History:
 #define _DEBUG OLD_DEBUG
 #undef OLD_DEBUG
 #endif
+#endif // __FreeBSD__
 
 #include "pal/dbgmsg.h"
 #include "pal/process.h"
@@ -211,6 +217,8 @@ GetSystemInfo(
     lpSystemInfo->lpMaximumApplicationAddress = (PVOID) (1ull << 47);
 #elif defined(__sun)
     lpSystemInfo->lpMaximumApplicationAddress = (PVOID) 0xfffffd7fffe00000ul;
+#elif defined(__HAIKU__)
+    lpSystemInfo->lpMaximumApplicationAddress = (PVOID) 0x7fffffe00000ul;
 #elif defined(USERLIMIT)
     lpSystemInfo->lpMaximumApplicationAddress = (PVOID) USERLIMIT;
 #elif defined(HOST_64BIT)
@@ -236,57 +244,4 @@ GetSystemInfo(
 
     LOGEXIT("GetSystemInfo returns VOID\n");
     PERF_EXIT(GetSystemInfo);
-}
-
-// Get memory size multiplier based on the passed in units (k = kilo, m = mega, g = giga)
-static uint64_t GetMemorySizeMultiplier(char units)
-{
-    switch(units)
-    {
-        case 'g':
-        case 'G': return 1024 * 1024 * 1024;
-        case 'm':
-        case 'M': return 1024 * 1024;
-        case 'k':
-        case 'K': return 1024;
-    }
-
-    // No units multiplier
-    return 1;
-}
-
-bool
-PAL_ReadMemoryValueFromFile(const char* filename, uint64_t* val)
-{
-    bool result = false;
-    char *line = nullptr;
-    size_t lineLen = 0;
-    char* endptr = nullptr;
-    uint64_t num = 0, multiplier;
-
-    if (val == nullptr)
-        return false;
-
-    FILE* file = fopen(filename, "r");
-    if (file == nullptr)
-        goto done;
-
-    if (getline(&line, &lineLen, file) == -1)
-        goto done;
-
-    errno = 0;
-    num = strtoull(line, &endptr, 0);
-    if (errno != 0)
-        goto done;
-
-    multiplier = GetMemorySizeMultiplier(*endptr);
-    *val = num * multiplier;
-    result = true;
-    if (*val/multiplier != num)
-        result = false;
-done:
-    if (file)
-        fclose(file);
-    free(line);
-    return result;
 }

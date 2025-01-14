@@ -44,6 +44,7 @@ SET_DEFAULT_DEBUG_CHANNEL(PROCESS); // some headers have code with asserts, so d
 #endif  // HAVE_POLL
 
 #include <unistd.h>
+#include <fcntl.h>
 #include <sys/mman.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -84,6 +85,7 @@ SET_DEFAULT_DEBUG_CHANNEL(PROCESS); // some headers have code with asserts, so d
 
 #ifdef __APPLE__
 #include <libproc.h>
+#include <pwd.h>
 #include <sys/sysctl.h>
 #include <sys/posix_sem.h>
 #include <mach/task.h>
@@ -117,6 +119,11 @@ extern "C"
 #include <sys/user.h>
 #endif
 
+#ifdef __HAIKU__
+#include <image.h>
+#include <OS.h>
+#endif
+
 extern char *g_szCoreCLRPath;
 extern bool g_running_in_exe;
 
@@ -125,13 +132,11 @@ using namespace CorUnix;
 CObjectType CorUnix::otProcess(
                 otiProcess,
                 NULL,   // No cleanup routine
-                NULL,   // No initialization routine
                 0,      // No immutable data
                 NULL,   // No immutable data copy routine
                 NULL,   // No immutable data cleanup routine
                 sizeof(CProcProcessLocalData),
                 NULL,   // No process local data cleanup routine
-                0,      // No shared data
                 PROCESS_ALL_ACCESS,
                 CObjectType::SecuritySupported,
                 CObjectType::SecurityInfoNotPersisted,
@@ -732,7 +737,7 @@ CorUnix::InternalCreateProcess(
             }
         }
         EnvironmentEntries++;
-        EnvironmentArray = (char **)InternalMalloc(EnvironmentEntries * sizeof(char *));
+        EnvironmentArray = (char **)malloc(EnvironmentEntries * sizeof(char *));
 
         EnvironmentEntries = 0;
         // Convert the environment block to array of strings
@@ -1271,7 +1276,7 @@ RaiseFailFastException(
     ENTRY("RaiseFailFastException");
 
     TerminateCurrentProcessNoExit(TRUE);
-    PROCAbort();
+    for (;;) PROCAbort();
 
     LOGEXIT("RaiseFailFastException");
     PERF_EXIT(RaiseFailFastException);
@@ -1395,7 +1400,7 @@ PALIMPORT
 VOID
 PALAPI
 PAL_SetCreateDumpCallback(
-    IN PCREATEDUMP_CALLBACK callback) 
+    IN PCREATEDUMP_CALLBACK callback)
 {
     _ASSERTE(g_createdumpCallback == nullptr);
     g_createdumpCallback = callback;
@@ -1627,7 +1632,7 @@ GetProcessIdDisambiguationKey(DWORD processId, UINT64 *disambiguationKey)
     // since the start of the Unix epoch).
     struct kinfo_proc info = {};
     size_t size = sizeof(info);
-    int mib[4] = { CTL_KERN, KERN_PROC, KERN_PROC_PID, processId };
+    int mib[4] = { CTL_KERN, KERN_PROC, KERN_PROC_PID, (int)processId };
     int ret = ::sysctl(mib, sizeof(mib)/sizeof(*mib), &info, &size, nullptr, 0);
 
     if (ret == 0)
@@ -1677,6 +1682,23 @@ GetProcessIdDisambiguationKey(DWORD processId, UINT64 *disambiguationKey)
     *disambiguationKey = secondsSinceEpoch;
 
     return TRUE;
+
+#elif defined(__HAIKU__)
+
+    // On Haiku, we return the process start time expressed in microseconds since boot time.
+
+    team_info info;
+
+    if (get_team_info(processId, &info) == B_OK)
+    {
+        *disambiguationKey = info.start_time;
+        return TRUE;
+    }
+    else
+    {
+        WARN("Failed to get start time of a process.");
+        return FALSE;
+    }
 
 #elif HAVE_PROCFS_STAT
 
@@ -2026,7 +2048,7 @@ Function:
 char*
 PROCFormatInt(ULONG32 value)
 {
-    char* buffer = (char*)InternalMalloc(128);
+    char* buffer = (char*)malloc(128);
     if (buffer != nullptr)
     {
         if (sprintf_s(buffer, 128, "%d", value) == -1)
@@ -2048,7 +2070,7 @@ Function:
 char*
 PROCFormatInt64(ULONG64 value)
 {
-    char* buffer = (char*)InternalMalloc(128);
+    char* buffer = (char*)malloc(128);
     if (buffer != nullptr)
     {
         if (sprintf_s(buffer, 128, "%lld", value) == -1)
@@ -2087,7 +2109,7 @@ PROCBuildCreateDumpCommandLine(
     }
     const char* DumpGeneratorName = "createdump";
     int programLen = strlen(g_szCoreCLRPath) + strlen(DumpGeneratorName) + 1;
-    char* program = *pprogram = (char*)InternalMalloc(programLen);
+    char* program = *pprogram = (char*)malloc(programLen);
     if (program == nullptr)
     {
         return FALSE;
@@ -2204,8 +2226,11 @@ PROCCreateCrashDump(
         size_t previousThreadId = InterlockedCompareExchange(&g_crashingThreadId, currentThreadId, 0);
         if (previousThreadId != 0)
         {
-            // Should never reenter or recurse
-            _ASSERTE(previousThreadId != currentThreadId);
+            // Return error if reenter this code
+            if (previousThreadId == currentThreadId)
+            {
+                return false;
+            }
 
             // The first thread generates the crash info and any other threads are blocked
             while (true)
@@ -2255,7 +2280,7 @@ PROCCreateCrashDump(
         if (g_createdumpCallback != nullptr)
         {
             // Remove the signal handlers inherited from the runtime process
-            SEHCleanupSignals();
+            SEHCleanupSignals(true /* isChildProcess */);
 
             // Call the statically linked createdump code
             g_createdumpCallback(argv.size(), argv.data());
@@ -2541,7 +2566,9 @@ Parameters:
 
   Does not return
 --*/
+#if !defined(HOST_ARM)
 PAL_NORETURN
+#endif
 VOID
 PROCAbort(int signal, siginfo_t* siginfo)
 {
@@ -2552,7 +2579,7 @@ PROCAbort(int signal, siginfo_t* siginfo)
 
     // Restore all signals; the SIGABORT handler to prevent recursion and
     // the others to prevent multiple core dumps from being generated.
-    SEHCleanupSignals();
+    SEHCleanupSignals(false /* isChildProcess */);
 
     // Abort the process after waiting for the core dump to complete
     abort();
@@ -2821,11 +2848,17 @@ CorUnix::InitializeProcessCommandLine(
     if (lpwstrFullPath)
     {
         LPWSTR lpwstr = PAL_wcsrchr(lpwstrFullPath, '/');
+        if (!lpwstr)
+        {
+            ERROR("Invalid full path\n");
+            palError = ERROR_INTERNAL_ERROR;
+            goto exit;
+        }    
         lpwstr[0] = '\0';
         size_t n = PAL_wcslen(lpwstrFullPath) + 1;
 
         size_t iLen = n;
-        initial_dir = reinterpret_cast<LPWSTR>(InternalMalloc(iLen*sizeof(WCHAR)));
+        initial_dir = reinterpret_cast<LPWSTR>(malloc(iLen*sizeof(WCHAR)));
         if (NULL == initial_dir)
         {
             ERROR("malloc() failed! (initial_dir) \n");
@@ -3358,6 +3391,11 @@ PROCGetProcessStatus(
                 *pdwExitCode = WEXITSTATUS(status);
                 TRACE("Exit code was %d\n", *pdwExitCode);
             }
+            else if ( WIFSIGNALED( status ) )
+            {
+                *pdwExitCode = 128 + WTERMSIG(status);
+                TRACE("Exit code was signal %d = exit code %d\n", WTERMSIG(status), *pdwExitCode);
+            }
             else
             {
                 WARN("process terminated without exiting; can't get exit "
@@ -3615,10 +3653,16 @@ getFileName(
         wcEnd = *lpEnd;
         *lpEnd = 0x0000;
 
-        /* Convert to ASCII */
+        /* Convert to UTF-8 */
         int size = 0;
-        int length = (PAL_wcslen(lpCommandLine)+1) * sizeof(WCHAR);
-        lpFileName = lpFileNamePS.OpenStringBuffer(length);
+        int length = WideCharToMultiByte(CP_ACP, 0, lpCommandLine, -1, NULL, 0, NULL, NULL);
+        if (length == 0)
+        {
+            ERROR("Failed to calculate the required buffer length.\n");
+            return FALSE;
+        };
+
+        lpFileName = lpFileNamePS.OpenStringBuffer(length - 1);
         if (NULL == lpFileName)
         {
             ERROR("Not Enough Memory!\n");
@@ -3752,7 +3796,7 @@ buildArgv(
     pThread = InternalGetCurrentThread();
     /* make sure to allocate enough space, up for the worst case scenario */
     int iLength = (iWlen + lpAppPath.GetCount() + 2);
-    lpAsciiCmdLine = (char *) InternalMalloc(iLength);
+    lpAsciiCmdLine = (char *) malloc(iLength);
 
     if (lpAsciiCmdLine == NULL)
     {
@@ -3932,7 +3976,7 @@ buildArgv(
 
     /* allocate lppargv according to the number of arguments
        in the command line */
-    lppArgv = (char **) InternalMalloc((((*pnArg)+1) * sizeof(char *)));
+    lppArgv = (char **) malloc((((*pnArg)+1) * sizeof(char *)));
 
     if (lppArgv == NULL)
     {
