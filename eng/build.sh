@@ -549,7 +549,7 @@ while [[ $# > 0 ]]; do
 done
 
 if [ ${#actInt[@]} -eq 0 ]; then
-    arguments=("-restore" "-build" "${arguments[@]}")
+    arguments=("-restore" "-build" ${arguments[@]+"${arguments[@]}"})
 fi
 
 if [[ "$os" == "browser" ]]; then
